@@ -1,0 +1,14 @@
+**/bin/
+**/obj/
+.vs/
+tmp/
+artifacts/
+*.user
+*.rvt
+*.dwg
+*.pdf
+local-data/
+.packages/
+ErrorReports/
+*.dmp
+*.log

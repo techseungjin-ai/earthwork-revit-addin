@@ -1,0 +1,19 @@
+(defun cb-point (p m) (list (+ (* (car m) (car p)) (* (cadr m) (cadr p)) (nth 4 m)) (+ (* (nth 2 m) (car p)) (* (nth 3 m) (cadr p)) (nth 5 m))))
+(defun cb-mul (a b) (list (+ (* (car a) (car b)) (* (cadr a) (nth 2 b))) (+ (* (car a) (cadr b)) (* (cadr a) (nth 3 b))) (+ (* (nth 2 a) (car b)) (* (nth 3 a) (nth 2 b))) (+ (* (nth 2 a) (cadr b)) (* (nth 3 a) (nth 3 b))) (+ (* (car a) (nth 4 b)) (* (cadr a) (nth 5 b)) (nth 4 a)) (+ (* (nth 2 a) (nth 4 b)) (* (nth 3 a) (nth 5 b)) (nth 5 a))))
+(defun cb-write (kind layer p text) (write-line (strcat kind "|" layer "|" (rtos (car p) 2 6) "|" (rtos (cadr p) 2 6) "|" (vl-string-translate "\n\r" "  " text)) cb-file))
+(defun cb-entity (e m depth / d kind layer p text b insert rot sx sy bm child)
+ (setq d (entget e) kind (cdr (assoc 0 d)) layer (cdr (assoc 8 d)))
+ (cond
+  ((member kind '("TEXT" "MTEXT" "ATTRIB" "ATTDEF")) (setq p (cb-point (cdr (assoc 10 d)) m) text (cdr (assoc 1 d))) (if text (cb-write "TEXT" layer p text)))
+  ((= kind "CIRCLE") (setq p (cb-point (cdr (assoc 10 d)) m)) (cb-write "CIRCLE" layer p (rtos (cdr (assoc 40 d)) 2 6)))
+  ((and (= kind "INSERT") (< depth 10))
+   (setq insert (cdr (assoc 10 d)) rot (cond ((cdr (assoc 50 d))) (0.0)) sx (cond ((cdr (assoc 41 d))) (1.0)) sy (cond ((cdr (assoc 42 d))) (1.0)))
+   (setq bm (cb-mul m (list (* sx (cos rot)) (- (* sy (sin rot))) (* sx (sin rot)) (* sy (cos rot)) (car insert) (cadr insert))))
+   (setq b (tblobjname "BLOCK" (cdr (assoc 2 d))))
+   (if b (progn (setq child (entnext b)) (while (and child (/= (cdr (assoc 0 (entget child))) "ENDBLK")) (cb-entity child bm (1+ depth)) (setq child (entnext child)))))
+  )
+ )
+)
+(progn (setq cb-file (open (strcat (getvar "DWGPREFIX") "drawing-extract.txt") "w" "utf8")) (setq cb-set (ssget "_X" '((410 . "Model")))) (setq cb-index 0) (if cb-set (repeat (sslength cb-set) (cb-entity (ssname cb-set cb-index) '(1.0 0.0 0.0 1.0 0.0 0.0) 0) (setq cb-index (1+ cb-index)))) (close cb-file) (princ "CIVILBIM_EXTRACT_DONE"))
+_.QUIT
+_Y
