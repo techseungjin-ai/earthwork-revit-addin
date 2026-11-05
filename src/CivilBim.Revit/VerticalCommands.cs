@@ -66,8 +66,8 @@ public sealed class VerticalWindow : ModelessWindow
         });
         StickyActions(go);
     }
-    private static string? Find(List<string> names,params string[] candidates)=>candidates.Select(c=>names.FirstOrDefault(n=>n.Equals(c,StringComparison.OrdinalIgnoreCase))).FirstOrDefault(x=>x!=null);
-    private static List<string> FamilyNames(Document doc,FamilySymbol symbol)
+    internal static string? Find(List<string> names,params string[] candidates)=>candidates.Select(c=>names.FirstOrDefault(n=>n.Equals(c,StringComparison.OrdinalIgnoreCase))).FirstOrDefault(x=>x!=null);
+    internal static List<string> FamilyNames(Document doc,FamilySymbol symbol)
     {
         try {using var family=doc.EditFamily(symbol.Family);var names=family.FamilyManager.Parameters.Cast<FamilyParameter>().Where(p=>p.Definition.GetDataType()==SpecTypeId.Length).Select(p=>p.Definition.Name).ToList();family.Close(false);return names;}
         catch{return symbol.Parameters.Cast<Parameter>().Where(p=>p.Definition.GetDataType()==SpecTypeId.Length).Select(p=>p.Definition.Name).ToList();}
@@ -89,8 +89,17 @@ public static class VerticalService
             foreach(var item in symbols)
             {
                 var center=ModelBuilder.Xyz(item.Center);var instance=FamilyBuilder.Vertical(doc,s.HPileFamily,center,s.PileTop,s.PileBottom,s,s.HPileLengthParameter,topParameter:s.HPileTopParameter);
-                var angle=item.Angle+s.HPileRotationOffset*Math.PI/180;ElementTransformUtils.RotateElement(doc,instance.Id,Line.CreateBound(center,center+XYZ.BasisZ),angle);
-                FamilyBuilder.Track(doc,instance,new ElementInfo("HPile",$"HP-{instances.Count+1:D5}","H-PILE",s.PileTop,s.PileBottom,0,0,s.PileTop-s.PileBottom,"",source,batch,s.Frame.ToSurvey(item.Center),s.Frame,s.Scale){LengthParameter=s.HPileLengthParameter,TopParameter=s.HPileTopParameter,Rotation=angle});instances.Add(instance);
+                doc.Regenerate();var sectionSegments=new List<PlanSegment>();
+                foreach(var solid in FamilyBuilder.Solids(instance.get_Geometry(new Options{DetailLevel=ViewDetailLevel.Fine})))
+                {
+                    var topFace=solid.Faces.Cast<Face>().OfType<PlanarFace>().Where(f=>f.FaceNormal.Z>.999).OrderByDescending(f=>f.Origin.Z).FirstOrDefault();
+                    if(topFace==null)continue;
+                    foreach(EdgeArray loop in topFace.EdgeLoops)foreach(Edge edge in loop)
+                    {var curve=edge.AsCurve();if(curve is Line)sectionSegments.Add(new(ModelBuilder.Meters(curve.GetEndPoint(0)),ModelBuilder.Meters(curve.GetEndPoint(1))));}
+                }
+                var actual=PlanRecognition.HPiles(sectionSegments).SingleOrDefault();
+                var angle=item.Angle-(actual?.Angle??0)+s.HPileRotationOffset*Math.PI/180;ElementTransformUtils.RotateElement(doc,instance.Id,Line.CreateBound(center,center+XYZ.BasisZ),angle);
+                FamilyBuilder.Track(doc,instance,new ElementInfo("HPile",$"HP-{instances.Count+1:D5}","H-PILE",s.PileTop,s.PileBottom,0,0,s.PileTop-s.PileBottom,"",source,batch,ModelBuilder.SurveyOrLocal(s.Frame,item.Center),s.Frame,s.Scale){LengthParameter=s.HPileLengthParameter,TopParameter=s.HPileTopParameter,Rotation=angle});instances.Add(instance);
             }
         }
         return instances;

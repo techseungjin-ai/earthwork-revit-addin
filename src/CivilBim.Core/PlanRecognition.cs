@@ -38,6 +38,14 @@ public static class PlanRecognition
                 var web=webs[0];var f0=flanges[0].Mid;var f1=flanges[1].Mid;
                 if(Math.Min(f0.DistanceXY(web.A)+f1.DistanceXY(web.B),f0.DistanceXY(web.B)+f1.DistanceXY(web.A))>connectionTolerance*4)continue;
             }
+            else
+            {
+                // A closed H has four flange-length runs and two web-length runs.
+                // The longest individual edge is often the web: do not use it as the flange axis.
+                var along=group.Where(s=>Math.Abs(Math.Sin(s.Angle-angle))<.02).Sum(s=>s.Length);
+                var across=group.Where(s=>Math.Abs(Math.Cos(s.Angle-angle))<.02).Sum(s=>s.Length);
+                if(across>along)angle+=Math.PI/2;
+            }
             var points=group.SelectMany(s=>new[]{s.A,s.B}).ToList();var center=new Point3(points.Average(p=>p.X),points.Average(p=>p.Y),points.Average(p=>p.Z));
             if(points.Any(p=>p.DistanceXY(center)>1))continue;
             result.Add(new(center,Normalize(angle),"H형 선군"));

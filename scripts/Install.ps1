@@ -21,7 +21,7 @@ if(Test-Path -LiteralPath $checks){
     }
 }
 $addins=Join-Path $env:APPDATA 'Autodesk\Revit\Addins\2027'
-$target=Join-Path $addins 'CivilBIM\0.4.0'
+$target=Join-Path $addins 'CivilBIM\0.4.1'
 New-Item -ItemType Directory -Path $target -Force | Out-Null
 foreach($file in (Get-ChildItem -LiteralPath $AssemblyDirectory -File | Where-Object {$_.Extension -in '.dll','.json','.pdb'})){
     $destination=Join-Path $target $file.Name
@@ -37,4 +37,5 @@ $manifest=@"
 Set-Content -LiteralPath (Join-Path $addins 'CivilBIM.addin') -Value $manifest -Encoding utf8
 Write-Output "Installed: $target"
 Write-Output '다음 Revit 실행부터 적용됩니다. 현재 열린 프로젝트는 그대로 유지됩니다.'
+
 

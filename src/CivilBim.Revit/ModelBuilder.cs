@@ -5,6 +5,7 @@ namespace CivilBim.Revit;
 
 public static class ModelBuilder
 {
+    public static Point3 SurveyOrLocal(SiteFrame frame,Point3 local)=>string.IsNullOrWhiteSpace(frame.Crs)?local:frame.ToSurvey(local);
     public static double Feet(double m)=>m/.3048;
     public static XYZ Xyz(Point3 p)=>new(Feet(p.X),Feet(p.Y),Feet(p.Z));
     public static Point3 Meters(XYZ p)=>new(p.X*.3048,p.Y*.3048,p.Z*.3048);
@@ -34,7 +35,7 @@ public static class ModelBuilder
         var actualVolume=FamilyBuilder.Solids(instance.get_Geometry(new Options {DetailLevel=ViewDetailLevel.Fine})).Sum(Volume);
         // Internal equivalent diameter is metadata only; never write or validate type dimensions.
         var diameter=Math.Sqrt(4*actualVolume/(Math.PI*segment.Length));
-        var position=settings.Frame.ToSurvey(Meters(center));
+        var position=SurveyOrLocal(settings.Frame,Meters(center));
         var info=new ElementInfo("CIP",segment.PileId,segment.Layer,segment.TopElevation,segment.BottomElevation,diameter,actualVolume,segment.Length,
             segment.BoreholeIds,source,batch,position,settings.Frame,settings.Scale) {LengthParameter=settings.CipLengthParameter,DiameterParameter="",OriginAtTop=settings.PileOriginAtTop,TopParameter=settings.CipTopParameter};
         // 지층 색은 뷰 오버라이드로만 표시하여 원본 패밀리 재료를 보존한다.
@@ -70,7 +71,7 @@ public static class ModelBuilder
         return GeometryCreationUtilities.CreateExtrusionGeometry(new[]{loop},axis,start.DistanceTo(end),new SolidOptions(material,ElementId.InvalidElementId));
     }
     public static ElementInfo Info(string kind,string id,string layer,Solid solid,XYZ start,XYZ end,Settings s,string source,string batch)=>
-        new(kind,id,layer,Math.Max(start.Z,end.Z)*.3048+s.Frame.Elevation,Math.Min(start.Z,end.Z)*.3048+s.Frame.Elevation,0,Volume(solid),start.DistanceTo(end)*.3048,"",source,batch,s.Frame.ToSurvey(Meters(start)),s.Frame,s.Scale);
+        new(kind,id,layer,Math.Max(start.Z,end.Z)*.3048+s.Frame.Elevation,Math.Min(start.Z,end.Z)*.3048+s.Frame.Elevation,0,Volume(solid),start.DistanceTo(end)*.3048,"",source,batch,SurveyOrLocal(s.Frame,Meters(start)),s.Frame,s.Scale);
     public static ElementId Steel(Document doc)=>Material(doc,"형강");
     public static ElementId Timber(Document doc)=>Material(doc,"토류벽");
     public static void VerifyUnchanged(Element element,ElementInfo info)

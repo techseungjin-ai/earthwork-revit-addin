@@ -4,7 +4,7 @@
 
 ## 설치
 
-1. GitHub Releases에서 `CivilBIM-0.4.0.zip`을 내려받아 PC의 로컬 폴더에 **모두 압축 해제**합니다.
+1. GitHub Releases에서 `CivilBIM-0.4.1.zip`을 내려받아 PC의 로컬 폴더에 **모두 압축 해제**합니다.
 2. Revit 2027을 저장하고 종료한 후, 풀린 폴더의 `Install.cmd`를 실행합니다.
 3. Revit 2027을 다시 시작하고 **토공사** 탭을 확인합니다. 서명되지 않은 애드인 확인창이 나오면 설치 출처를 확인한 후 로드하세요.
 
@@ -24,3 +24,4 @@
 ## 소스 빌드
 
 Windows, .NET 10 SDK, Revit 2027 설치가 필요합니다. PowerShell에서 `dotnet restore src/CivilBim.Revit/CivilBim.Revit.csproj` 및 `dotnet build src/CivilBim.Revit/CivilBim.Revit.csproj -c Release`를 실행합니다. Autodesk API DLL은 별도 배포하지 않습니다. 외부 구성요소 고지는 [THIRD-PARTY](docs/THIRD-PARTY.md)를 확인하세요.
+

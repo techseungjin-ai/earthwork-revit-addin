@@ -91,7 +91,16 @@ public sealed class CadReader
     {
         var blocks=Blocks.Where(b=>b.Layer==layer).ToList();
         blocks=blocks.Where(b=>!blocks.Any(parent=>parent.Key!=b.Key && b.Key.StartsWith(parent.Key+"/",StringComparison.Ordinal))).ToList();
-        var result=blocks.Select(b=>new PileSymbol(ModelBuilder.Meters(b.Origin),PlanRecognition.Normalize(b.Angle),"CAD 블록")).ToList();
+        var result=new List<PileSymbol>();
+        foreach(var block in blocks)
+        {
+            var outline=new List<PlanSegment>();
+            foreach(var path in Paths.Where(p=>p.BlockKey==block.Key||p.BlockKey.StartsWith(block.Key+"/",StringComparison.Ordinal)))
+                for(int j=1;j<path.Points.Count;j++)outline.Add(new(ModelBuilder.Meters(path.Points[j-1]),ModelBuilder.Meters(path.Points[j])));
+            var recognized=PlanRecognition.HPiles(outline);
+            if(recognized.Count>0)result.AddRange(recognized);
+            else result.Add(new(ModelBuilder.Meters(block.Origin),PlanRecognition.Normalize(block.Angle),"CAD 블록"));
+        }
         var segments=new List<PlanSegment>();
         foreach(var path in Paths.Where(p=>p.Layer==layer && !blocks.Any(b=>p.BlockKey.StartsWith(b.Key,StringComparison.Ordinal))))
             for(var i=1;i<path.Points.Count;i++)segments.Add(new(ModelBuilder.Meters(path.Points[i-1]),ModelBuilder.Meters(path.Points[i])));

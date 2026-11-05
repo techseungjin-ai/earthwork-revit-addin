@@ -25,7 +25,7 @@ public sealed class SoilWindow:ModelessWindow
         var show=new Button {Content="시추공 좌표 위치 보기",Padding=new(9,6,9,6),HorizontalAlignment=HorizontalAlignment.Left,Margin=new(0,8,0,8)};root.Children.Add(show);show.Click+=(_,_)=>Api(app=>ShowHoles(app,Input.Data()));
         var verify=new Button {Content="생성된 지층 검증 (PDF 대조)",Padding=new(9,6,9,6),HorizontalAlignment=HorizontalAlignment.Left};root.Children.Add(verify);verify.Click+=(_,_)=>Api(app=>{var report=SoilValidation.Check(doc,Input.Data());ModelessHost.Open(app,"시추지층검증",()=>new SoilValidationWindow()).Update(report);});
         root.Children.Add(new TextBlock {Text="2. 아래 버튼을 눌러 지층 생성",FontWeight=FontWeights.SemiBold,Margin=new(0,10,0,6)});
-        root.Children.Add(new TextBlock {Text="PDF의 좌표·지표 EL·층별 심도만으로 시추공 주변에 별도 일반모델 지층을 만듭니다. 각 위치에는 가장 가까운 시추공의 층서를 적용합니다. 생성 후 ‘지형·지층 중복체적’에서 지형 → 지층 순서로 선택해 물량을 기록하세요.",TextWrapping=TextWrapping.Wrap});
+        root.Children.Add(new TextBlock {Text="PDF의 좌표·지표 EL·층별 심도만으로 시추공 주변에 하위요소를 수정할 수 있는 별도 지형솔리드 지층을 만듭니다. 각 위치에는 가장 가까운 시추공의 층서를 적용합니다. 생성 후 ‘지형·지층 중복체적’에서 지형 → 지층 순서로 선택해 물량을 기록하세요.",TextWrapping=TextWrapping.Wrap});
         var create=new Button {Content="시추주상도 기반 지층 생성",Name="CreateBoreholeGeology",Height=54,FontSize=18,FontWeight=FontWeights.SemiBold,Background=Brushes.RoyalBlue,Foreground=Brushes.White,Margin=new(0,8,0,0)};root.Children.Add(create);create.Click+=(_,_)=>Api(Generate);StickyActions(create);
     }
     internal void SetBoundaryForCheck(NtsGeometry boundary){Boundary=boundary;}
@@ -53,3 +53,4 @@ public sealed class SoilCommand:IExternalCommand
         var ui=data.Application.ActiveUIDocument;if(ui==null||ui.Document.IsFamilyDocument)return Result.Cancelled;ModelessHost.Open(data.Application,"작업대지",()=>new SoilWindow(ui.Document,Storage.Load(ui.Document)));return Result.Succeeded;
     }
 }
+

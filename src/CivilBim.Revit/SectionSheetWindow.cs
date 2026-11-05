@@ -40,6 +40,10 @@ public sealed class SectionSheetWindow:ModelessWindow
     private ElementId lineView=ElementId.InvalidElementId;
     private int planScale=100;
     private readonly ComboBox end=new(){ItemsSource=new[]{"하단을 선까지 맞추기","상단을 선까지 맞추기"},SelectedIndex=0,Margin=new(0,8,0,8),MinHeight=30};
+    private readonly ComboBox mappingFamily=new(){MinHeight=28},mappingLength=new(){MinHeight=28},mappingTop=new(){MinHeight=28};
+    private readonly Dictionary<ElementId,(string Length,string Top)> mappings=[];
+    private bool refreshingMapping;
+    private readonly TextBlock mappingInfo=new(){TextWrapping=TextWrapping.Wrap,Margin=new(0,4,0,4)};
     private readonly TextBlock info=new(){TextWrapping=TextWrapping.Wrap,Margin=new(0,10,0,10)};
     public SectionSheetWindow(Document document)
     {
@@ -50,8 +54,12 @@ public sealed class SectionSheetWindow:ModelessWindow
         Button Add(string caption,Action<UIApplication> action,bool pick=false){var b=new Button{Content=caption,Padding=new(9),Margin=new(0,5,0,5)};panel.Children.Add(b);b.Click+=(_,_)=>Api(action,pick);return b;}
         Add("1. CAD 폴리선으로 평면 경로 선택",app=>{PlanView(app);TaskDialog.Show("경로 선택","평면에서 전개할 CAD 폴리선을 선택하세요.");path=ConnectedPath.Cad(DrawingSelections.Path(app.ActiveUIDocument,"전개 경로 선택"));pathElements=[];Summary();},true);
         Add("1. Revit 경로선 여러 개 선택 → 완료",app=>{PlanView(app);TaskDialog.Show("Revit 경로선 선택","연결된 모델선/상세선을 여러 개 선택한 뒤 완료를 누르세요. 선택 순서와 관계없이 끝점을 연결합니다. 갈라진 선이나 다른 경로는 함께 선택하지 마세요.");var picked=app.ActiveUIDocument.Selection.PickObjects(ObjectType.Element,new LineFilter(),"연결할 경로선 여러 개 선택 후 완료");path=ConnectedPath.Join(picked.DistinctBy(r=>r.ElementId).Select(r=>(IReadOnlyList<Point3>)((CurveElement)doc.GetElement(r)).GeometryCurve.Tessellate().Select(ModelBuilder.Meters).ToList()));pathElements=picked.Select(r=>r.ElementId).Distinct().ToList();Summary();},true);
-        Add("2. 높이를 조절할 CIP / H-PILE 선택",app=>{TaskDialog.Show("수직부재 선택","단면에 표시하고 높이를 조절할 CivilBIM CIP/H-PILE을 선택한 뒤 완료를 누르세요.");targets=app.ActiveUIDocument.Selection.PickObjects(ObjectType.Element,new PileFilter(),"CIP/H-PILE 선택").Select(r=>r.ElementId).Distinct().ToList();Summary();},true);
+        Add("2. 높이를 조절할 CIP / H-PILE 선택",app=>{TaskDialog.Show("수직부재 선택","단면에 표시하고 높이를 조절할 CIP/H-PILE을 선택한 뒤 완료를 누르세요.");targets=app.ActiveUIDocument.Selection.PickObjects(ObjectType.Element,new PileFilter(),"CIP/H-PILE 선택").Select(r=>r.ElementId).Distinct().ToList();RefreshMapping();Summary();},true);
         panel.Children.Add(info);
+        panel.Children.Add(new TextBlock{Text="선택 패밀리의 높이 매개변수 확인 / 변경",FontWeight=FontWeights.SemiBold,Margin=new(0,8,0,4)});
+        panel.Children.Add(mappingFamily);panel.Children.Add(new TextBlock{Text="길이 인스턴스 매개변수"});panel.Children.Add(mappingLength);panel.Children.Add(new TextBlock{Text="상단 EL 매개변수 (없으면 사용 안 함)"});panel.Children.Add(mappingTop);panel.Children.Add(mappingInfo);
+        mappingFamily.SelectionChanged+=(_,_)=>RefreshMappingParameters();
+        mappingLength.SelectionChanged+=(_,_)=>MappingChanged();mappingTop.SelectionChanged+=(_,_)=>MappingChanged();
         Add("선택한 경로선 표시",app=>{if(pathElements.Count==0)throw new InvalidDataException("화면 표시할 Revit 경로선이 없습니다. CAD 경로는 구간 수로 확인하세요.");app.ActiveUIDocument.Selection.SetElementIds(pathElements);});
         Add("선택한 수직부재 표시",app=>{if(targets.Count==0)throw new InvalidDataException("선택된 수직부재가 없습니다.");app.ActiveUIDocument.Selection.SetElementIds(targets);});
         Add("3. 경로별 단면 생성 + 새 시트에 연속 배치",Create);
@@ -61,6 +69,33 @@ public sealed class SectionSheetWindow:ModelessWindow
         var apply=Add("5. 선택한 선까지 CIP / H-PILE 높이 적용",Apply);apply.Background=System.Windows.Media.Brushes.RoyalBlue;apply.Foreground=System.Windows.Media.Brushes.White;StickyActions(apply);Summary();
     }
     private void Summary()=>info.Text=$"선택 현황: 경로 {Math.Max(0,path.Count-1)}구간 / Revit 경로선 {pathElements.Count}개 / 수직부재 {targets.Count}개 / 기준선 {lines.Count}개. 만든 단면과 부재 연결은 RVT에 저장됩니다.";
+    private sealed record MappingChoice(ElementId Id,string Label){public override string ToString()=>Label;}
+    private void RefreshMapping()
+    {
+        mappings.Clear();var choices=targets.Select(id=>doc.GetElement(id) as FamilyInstance).Where(p=>p!=null).Cast<FamilyInstance>().GroupBy(p=>p.Symbol.Id).Select(g=>new MappingChoice(g.Key,$"{g.First().Symbol.FamilyName} : {g.First().Symbol.Name} ({g.Count()}개)")).ToList();mappingFamily.ItemsSource=choices;mappingFamily.SelectedItem=choices.FirstOrDefault();
+    }
+    private void RefreshMappingParameters()
+    {
+        if(mappingFamily.SelectedItem is not MappingChoice choice)return;
+        var members=targets.Select(id=>doc.GetElement(id) as FamilyInstance).Where(p=>p?.Symbol.Id==choice.Id).Cast<FamilyInstance>().ToList();if(members.Count==0)return;var first=members[0];
+        var names=first.Parameters.Cast<Parameter>().Where(p=>!p.IsReadOnly&&p.StorageType==StorageType.Double&&p.Definition.GetDataType()==SpecTypeId.Length).Select(p=>p.Definition.Name).Distinct().Order().ToList();
+        refreshingMapping=true;mappingLength.ItemsSource=names;mappingTop.ItemsSource=new[]{"(사용 안 함)"}.Concat(names).ToList();
+        var saved=members.Select(Storage.Info).Where(x=>x!=null).Select(x=>(x!.LengthParameter,x.TopParameter)).Distinct().ToList();var chosen=mappings.GetValueOrDefault(choice.Id,saved.Count==1?saved[0]:("",""));
+        mappingLength.SelectedItem=names.FirstOrDefault(n=>n==chosen.Item1);mappingTop.SelectedItem=string.IsNullOrEmpty(chosen.Item2)?"(사용 안 함)":chosen.Item2;
+        refreshingMapping=false;
+        mappingInfo.Text=first.Symbol.Family.FamilyPlacementType==FamilyPlacementType.TwoLevelsBased?"2레벨 기반 패밀리는 기준/상단 레벨 오프셋을 사용합니다.":saved.Count>1?"같은 유형에 서로 다른 기존 설정이 있습니다. 사용할 이름을 선택하세요.":$"현재 저장: 길이 {(string.IsNullOrEmpty(chosen.Item1)?"미확인":chosen.Item1)}, 상단 {(string.IsNullOrEmpty(chosen.Item2)?"사용 안 함":chosen.Item2)}. 바꾸지 않으면 기존 설정을 사용합니다.";
+    }
+    private void MappingChanged()
+    {
+        if(refreshingMapping||mappingLength.SelectedItem==null)return;
+        try{SaveMapping();}catch(InvalidDataException ex){mappingInfo.Text=ex.Message;if(mappingFamily.SelectedItem is MappingChoice c)mappings.Remove(c.Id);}
+    }
+    private void SaveMapping()
+    {
+        if(mappingFamily.SelectedItem is not MappingChoice choice)throw new InvalidDataException("먼저 수직부재를 선택하세요.");var length=mappingLength.SelectedItem as string??throw new InvalidDataException("수정 가능한 길이 인스턴스 매개변수를 선택하세요.");var top=mappingTop.SelectedItem as string;if(top=="(사용 안 함)")top="";if(top==length)throw new InvalidDataException("길이와 상단 EL에 같은 매개변수를 사용할 수 없습니다.");
+        mappings[choice.Id]=(length,top??"");mappingInfo.Text=$"적용 예정: 길이 {length}, 상단 {(string.IsNullOrEmpty(top)?"사용 안 함":top)}. 단면 생성 또는 높이 적용 시 저장됩니다.";
+    }
+    private ElementInfo WithMapping(FamilyInstance pile,ElementInfo info)=>mappings.TryGetValue(pile.Symbol.Id,out var m)?info with{LengthParameter=m.Length,TopParameter=m.Top}:info;
     private void PlanView(UIApplication app){var active=app.ActiveUIDocument.ActiveView;if(active is not ViewPlan)throw new InvalidDataException("평면 뷰로 전환한 뒤 경로를 선택하세요.");planScale=Math.Max(1,active.Scale);}
     internal void ConfigureCheck(List<Point3> route,IEnumerable<ElementId> ids,int scale=100){path=route;targets=ids.ToList();planScale=scale;Summary();}
     internal void CreateCheck(UIApplication app)=>Create(app);
@@ -69,6 +104,7 @@ public sealed class SectionSheetWindow:ModelessWindow
     private sealed class LineFilter:ISelectionFilter {public bool AllowElement(Element e)=>e is CurveElement;public bool AllowReference(Reference r,XYZ p)=>false;}
     private void Create(UIApplication app)
     {
+        if(mappingLength.SelectedItem!=null)SaveMapping();
         if(path.Count<2||targets.Count==0)throw new InvalidDataException("경로와 수직부재를 먼저 선택하세요.");
         var segments=path.Zip(path.Skip(1),(a,b)=>(A:ModelBuilder.Xyz(a),B:ModelBuilder.Xyz(b))).ToList();
         if(segments.Any(s=>new XYZ(s.B.X-s.A.X,s.B.Y-s.A.Y,0).GetLength()<doc.Application.ShortCurveTolerance))throw new InvalidDataException("경로에 너무 짧은 구간이 있습니다.");
@@ -83,10 +119,11 @@ public sealed class SectionSheetWindow:ModelessWindow
             {
                 var b=FamilyBuilder.Bounds(pile);var length=(b.Max.Z-b.Min.Z)*.3048;
                 var candidates=pile.Parameters.Cast<Parameter>().Where(p=>!p.IsReadOnly&&p.StorageType==StorageType.Double&&p.Definition.GetDataType()==SpecTypeId.Length&&Math.Abs(p.AsDouble()*.3048-length)<.002).ToList();
-                if(pile.Symbol.Family.FamilyPlacementType!=FamilyPlacementType.TwoLevelsBased&&candidates.Count!=1)throw new InvalidDataException($"부재 {pile.Id}: 실제 높이와 일치하는 수정 가능한 길이 파라미터를 하나로 확인할 수 없습니다. 패밀리 길이 파라미터를 확인하세요.");
-                var info=new ElementInfo("HPile",pile.UniqueId,"",b.Max.Z*.3048+settings.Frame.Elevation,b.Min.Z*.3048+settings.Frame.Elevation,0,0,length,"","기존 패밀리",pile.UniqueId,ModelBuilder.Meters((b.Min+b.Max)/2),settings.Frame,settings.Scale){LengthParameter=candidates.FirstOrDefault()?.Definition.Name??""};
+                if(pile.Symbol.Family.FamilyPlacementType!=FamilyPlacementType.TwoLevelsBased&&candidates.Count!=1&&!mappings.ContainsKey(pile.Symbol.Id))throw new InvalidDataException($"부재 {pile.Id}: 길이 매개변수를 자동으로 하나로 확인할 수 없습니다. 선택 패밀리의 매개변수에서 지정하세요.");
+                var info=new ElementInfo("HPile",pile.UniqueId,"",b.Max.Z*.3048+settings.Frame.Elevation,b.Min.Z*.3048+settings.Frame.Elevation,0,0,length,"","기존 패밀리",pile.UniqueId,ModelBuilder.Meters((b.Min+b.Max)/2),settings.Frame,settings.Scale){LengthParameter=candidates.FirstOrDefault()?.Definition.Name??""};info=WithMapping(pile,info);
                 Storage.Write(pile,info);
             }
+            foreach(var pile in piles.Where(p=>Storage.Info(p)!=null&&mappings.ContainsKey(p.Symbol.Id)))Storage.Write(pile,WithMapping(pile,Storage.Info(pile)!));
             if(register.Commit()!=TransactionStatus.Committed)throw new InvalidDataException("기존 부재 연결을 취소했습니다.");
         }
         using(var prepare=new Transaction(doc,"CIP H-PILE 자동결합 해제")){prepare.Start();released=FamilyBuilder.ReleaseVerticalJoins(doc,piles);if(prepare.Commit()!=TransactionStatus.Committed)throw new InvalidDataException("자동결합 해제를 취소했습니다.");}
@@ -145,6 +182,7 @@ public sealed class SectionSheetWindow:ModelessWindow
     private static IEnumerable<XYZ> Corners(BoundingBoxXYZ b)=>from x in new[]{b.Min.X,b.Max.X} from y in new[]{b.Min.Y,b.Max.Y} from z in new[]{b.Min.Z,b.Max.Z} select b.Transform.OfPoint(new XYZ(x,y,z));
     private void Apply(UIApplication app)
     {
+        if(mappingLength.SelectedItem!=null)SaveMapping();
         if(lines.Count==0||doc.GetElement(lineView) is not View source)throw new InvalidDataException("높이 기준선을 먼저 선택하세요.");
         var curves=lines.Select(id=>doc.GetElement(id) as CurveElement??throw new InvalidDataException("기준선이 삭제되었습니다. 다시 선택하세요.")).ToList();
         if(curves.Any(c=>c is DetailCurve&&c.OwnerViewId!=source.Id))throw new InvalidDataException("기준선과 활성 뷰가 다릅니다. 시트 상세선은 시트에서, 단면 선은 단면을 활성화한 뒤 선택하세요.");
@@ -162,7 +200,7 @@ public sealed class SectionSheetWindow:ModelessWindow
             var projected=curves.SelectMany(c=>{var pts=c.GeometryCurve.Tessellate();return pts.Zip(pts.Skip(1),(a,b)=>(A:a,B:b));}).ToList();
             foreach(var uid in SectionSheetData.Read(view)!.Members)
             {
-                var pile=doc.GetElement(uid) as FamilyInstance??throw new InvalidDataException("단면에 연결된 부재가 삭제되었습니다. 단면을 다시 생성하세요.");var info=Storage.Info(pile)??throw new InvalidDataException("부재 정보가 없습니다.");
+                var pile=doc.GetElement(uid) as FamilyInstance??throw new InvalidDataException("단면에 연결된 부재가 삭제되었습니다. 단면을 다시 생성하세요.");var info=WithMapping(pile,Storage.Info(pile)??throw new InvalidDataException("부재 정보가 없습니다."));
                 var live=FamilyBuilder.Bounds(pile);info=info with {Top=live.Max.Z*.3048+settings.Frame.Elevation,Bottom=live.Min.Z*.3048+settings.Frame.Elevation};
                 var p=Position(pile);var basePoint=new XYZ(p.X,p.Y,0);var q=map.OfPoint(basePoint);var up=map.OfVector(XYZ.BasisZ);var right=source is ViewSheet?new XYZ(up.Y,-up.X,0).Normalize():view.RightDirection;
                 var profile=new List<PlanSegment>();

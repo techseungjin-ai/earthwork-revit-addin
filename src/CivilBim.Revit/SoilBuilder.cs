@@ -18,10 +18,10 @@ public static class SoilBuilder
         var frame=SiteGeology.BoreholeFrame(data,settings.Frame,settings.BoreholeFrame);
         var scope=boundary??SiteGeology.BoreholeScope(data,frame);
         var bodies=SiteGeology.BuildFromBoreholes(data,frame,scope);
-        var result=Create(doc,scope,bodies,settings,frame,0,false);
+        var result=Create(doc,scope,bodies,settings,frame,0,false,true);
         settings.BoreholeFrame=frame;return result;
     }
-    private static SoilResult Create(Document doc,Geometry boundary,List<SoilBody> bodies,Settings settings,SiteFrame frame,double excavationEl,bool calculateExcavation)
+    private static SoilResult Create(Document doc,Geometry boundary,List<SoilBody> bodies,Settings settings,SiteFrame frame,double excavationEl,bool calculateExcavation,bool editable=false)
     {
         if(bodies.Count==0)throw new InvalidDataException("생성할 시추 지층이 없습니다.");
         using var t=new Transaction(doc,"작업대지 지층 / 굴착 물량");t.Start();QuantityParameters.Ensure(doc);
@@ -39,15 +39,20 @@ public static class SoilBuilder
             }
             var nativeVolume=solids.Sum(ModelBuilder.Volume);
             if(Math.Abs(nativeVolume-body.Volume)>Math.Max(.001,body.Volume*.00001))throw new InvalidDataException($"{body.Layer} 지층 솔리드/계산 체적 불일치.");
-            var element=DirectShape.CreateElement(doc,new ElementId(BuiltInCategory.OST_GenericModel));element.Name="작업대지 지층 · "+body.Layer;element.SetShape(solids.Cast<GeometryObject>().ToList());
-            Storage.Write(element,new ElementInfo("SiteSoil",body.Layer,body.Layer,body.Wedges.Max(w=>Math.Max(w.A.Z,Math.Max(w.B.Z,w.C.Z)))+frame.Elevation,body.Wedges.Min(w=>w.Bottom)+frame.Elevation,0,nativeVolume,0,string.Join(";",body.Boreholes),"WORKSITE",batch,new(),frame,settings.Scale));
-            QuantityParameters.Set(element,body.Layer,string.Join(";",body.Boreholes),nativeVolume,body.ExcavatedArea,body.ExcavatedVolume,calculateExcavation);ids.Add(element.Id);
+            var elements=new List<(Element Element,double Volume)>();
+            if(editable)elements=CreateToposolids(doc,body,material);
+            else {var shape=DirectShape.CreateElement(doc,new ElementId(BuiltInCategory.OST_GenericModel));shape.Name="작업대지 지층 · "+body.Layer;shape.SetShape(solids.Cast<GeometryObject>().ToList());elements.Add((shape,nativeVolume));}
+            foreach(var (element,volume) in elements)
+            {
+                Storage.Write(element,new ElementInfo("SiteSoil",body.Layer,body.Layer,body.Wedges.Max(w=>Math.Max(w.A.Z,Math.Max(w.B.Z,w.C.Z)))+frame.Elevation,body.Wedges.Min(w=>w.Bottom)+frame.Elevation,0,volume,0,string.Join(";",body.Boreholes),"WORKSITE",batch,new(),frame,settings.Scale));
+                QuantityParameters.Set(element,body.Layer,string.Join(";",body.Boreholes),volume,editable?0:body.ExcavatedArea,editable?0:body.ExcavatedVolume,calculateExcavation);ids.Add(element.Id);
+            }
         }
         var points=boundary.Coordinates.Select(c=>new Point3(c.X,c.Y,excavationEl-frame.Elevation)).ToList();
         var view=Views.Create(doc,"02_작업대지 지층",points);
         view.DisplayStyle=DisplayStyle.Shading;view.IsSectionBoxActive=true;
         foreach(var element in new FilteredElementCollector(doc).WhereElementIsNotElementType())
-            if(element is ImportInstance || element is Toposolid || Storage.Info(element)?.Kind=="Building")if(element.CanBeHidden(view))view.HideElements(new[]{element.Id});
+            if(!ids.Contains(element.Id)&&(element is ImportInstance || element is Toposolid || Storage.Info(element)?.Kind=="Building"))if(element.CanBeHidden(view))view.HideElements(new[]{element.Id});
         var box=view.GetSectionBox();box.Min=new(box.Min.X,box.Min.Y,ModelBuilder.Feet(bodies.Min(b=>b.Wedges.Min(w=>w.Bottom))-1));box.Max=new(box.Max.X,box.Max.Y,ModelBuilder.Feet(bodies.Max(b=>b.Wedges.Max(w=>Math.Max(w.A.Z,Math.Max(w.B.Z,w.C.Z))))+2));view.SetSectionBox(box);
         var fill=new FilteredElementCollector(doc).OfClass(typeof(FillPatternElement)).Cast<FillPatternElement>().FirstOrDefault(p=>p.GetFillPattern().IsSolidFill);
         if(fill!=null)foreach(var v in new FilteredElementCollector(doc).OfClass(typeof(View)).Cast<View>().Where(v=>!v.IsTemplate&&v.AreGraphicsOverridesAllowed()))
@@ -57,7 +62,31 @@ public static class SoilBuilder
             var graphics=v.GetElementOverrides(id).SetSurfaceForegroundPatternId(fill.Id).SetSurfaceForegroundPatternColor(color).SetSurfaceForegroundPatternVisible(true).SetCutForegroundPatternId(fill.Id).SetCutForegroundPatternColor(color).SetCutForegroundPatternVisible(true);
             v.SetElementOverrides(id,graphics);
         }
-        var schedule=QuantityParameters.Schedule(doc,calculateExcavation);t.Commit();return new(ids,schedule,view,bodies);
+        var schedule=QuantityParameters.Schedule(doc,calculateExcavation,editable);t.Commit();return new(ids,schedule,view,bodies);
+    }
+    private static List<(Element Element,double Volume)> CreateToposolids(Document doc,SoilBody body,ElementId material)
+    {
+        var result=new List<(Element,double)>();var level=new FilteredElementCollector(doc).OfClass(typeof(Level)).Cast<Level>().First();
+        var template=new FilteredElementCollector(doc).OfClass(typeof(ToposolidType)).Cast<ToposolidType>().FirstOrDefault()??throw new InvalidDataException("프로젝트에 지형솔리드 유형이 필요합니다.");
+        IEnumerable<Polygon> Parts(Geometry g){if(g is Polygon p)yield return p;else if(g is GeometryCollection)for(int i=0;i<g.NumGeometries;i++)foreach(var p2 in Parts(g.GetGeometryN(i)))yield return p2;}
+        foreach(var group in body.Wedges.GroupBy(w=>(Top:w.A.Z,Bottom:w.Bottom)))
+        {
+            if(group.Any(w=>Math.Abs(w.A.Z-w.B.Z)>1e-8||Math.Abs(w.A.Z-w.C.Z)>1e-8))throw new InvalidDataException("편집 지층은 수평 시추공 구역을 사용해야 합니다.");
+            var thickness=ModelBuilder.Feet(group.Key.Top-group.Key.Bottom);
+            var type=(ToposolidType)template.Duplicate("CBIM_"+body.Layer+"_"+Guid.NewGuid().ToString("N"));
+            var structure=type.GetCompoundStructure();structure.SetLayers(new[]{new CompoundStructureLayer(thickness,MaterialFunctionAssignment.Structure,material)});type.SetCompoundStructure(structure);
+            var union=NetTopologySuite.Operation.OverlayNG.OverlayNGRobust.Union(group.Select(w=>(Geometry)w.Footprint).ToList());
+            foreach(var polygon in Parts(union))
+            {
+                var topo=Toposolid.Create(doc,ContextBuilder.Loops(polygon,0,doc.Application.ShortCurveTolerance),type.Id,level.Id);
+                topo.get_Parameter(BuiltInParameter.TOPOSOLID_HEIGHTABOVELEVEL_PARAM).Set(ModelBuilder.Feet(group.Key.Top)-level.Elevation);doc.Regenerate();
+                var volume=FamilyBuilder.Solids(topo.get_Geometry(new Options{DetailLevel=ViewDetailLevel.Fine})).Sum(ModelBuilder.Volume);
+                var expected=polygon.Area*(group.Key.Top-group.Key.Bottom);
+                if(Math.Abs(volume-expected)>Math.Max(.001,expected*.00001))throw new InvalidDataException(body.Layer+" 지형솔리드 체적 검증 실패. 기존 모델은 보존됩니다.");
+                result.Add((topo,volume));
+            }
+        }
+        return result;
     }
     public static Solid Wedge(SoilWedge wedge,ElementId material)
     {
@@ -164,16 +193,16 @@ public static class QuantityParameters
     private static Guid Id(string name)=>new(System.Security.Cryptography.MD5.HashData(System.Text.Encoding.UTF8.GetBytes("CivilBIM-quantities-v2:"+name)));
     public static void Ensure(Document doc)
     {
-        if(Fields.All(f=>SharedParameterElement.Lookup(doc,Id(f.Name))!=null))return;
+
         var app=doc.Application;var old=app.SharedParametersFilename;var file=Path.Combine(Path.GetTempPath(),"CivilBIM-quantities-"+Guid.NewGuid().ToString("N")+".txt");
         File.WriteAllText(file,"# Revit shared parameter file.\n*META\tVERSION\tMINVERSION\nMETA\t2\t1\n*GROUP\tID\tNAME\n*PARAM\tGUID\tNAME\tDATATYPE\tDATACATEGORY\tGROUP\tVISIBLE\tDESCRIPTION\tUSERMODIFIABLE\tHIDEWHENNOVALUE\n");
         try
         {
             app.SharedParametersFilename=file;var definitions=app.OpenSharedParameterFile()??throw new InvalidDataException("물량 파라미터 정의 파일 생성 실패.");var group=definitions.Groups.Create("CivilBIM");
-            var categories=app.Create.NewCategorySet();categories.Insert(doc.Settings.Categories.get_Item(BuiltInCategory.OST_GenericModel));
+            var categories=app.Create.NewCategorySet();categories.Insert(doc.Settings.Categories.get_Item(BuiltInCategory.OST_GenericModel));categories.Insert(doc.Settings.Categories.get_Item(BuiltInCategory.OST_Toposolid));
             foreach(var f in Fields)
             {
-                if(SharedParameterElement.Lookup(doc,Id(f.Name))!=null)continue;
+                if(SharedParameterElement.Lookup(doc,Id(f.Name)) is SharedParameterElement existing){doc.ParameterBindings.ReInsert(existing.GetDefinition(),app.Create.NewInstanceBinding(categories),GroupTypeId.Data);continue;}
                 var definition=group.Definitions.Create(new ExternalDefinitionCreationOptions(f.Name,f.Type){GUID=Id(f.Name),UserModifiable=false});
                 if(!doc.ParameterBindings.Insert(definition,app.Create.NewInstanceBinding(categories),GroupTypeId.Data))throw new InvalidDataException(f.Name+" 물량 파라미터 바인딩 실패.");
             }
@@ -188,12 +217,12 @@ public static class QuantityParameters
         e.get_Parameter(Id("CBIM_수량상태")).Set(calculated?"수평 바닥 EL 참고계산":"지층 전체체적만 계산 · 굴착량은 중복체적 명령에서 산정");
     }
     public static void MarkStale(Element e)=>e.get_Parameter(Id("CBIM_수량상태"))?.Set("지형 수정 후 재계산 필요");
-    public static ViewSchedule Schedule(Document doc,bool includeExcavation=true)
+    public static ViewSchedule Schedule(Document doc,bool includeExcavation=true,bool editable=false)
     {
-        var name=includeExcavation?"03_작업대지 지층별 굴착 물량":"03_작업대지 지층 전체체적";
+        var name=editable?"03_시추 지층 지형솔리드 체적":includeExcavation?"03_작업대지 지층별 굴착 물량":"03_작업대지 지층 전체체적";
         var existing=new FilteredElementCollector(doc).OfClass(typeof(ViewSchedule)).Cast<ViewSchedule>().FirstOrDefault(s=>s.Name==name);
         if(existing!=null)return existing;
-        var schedule=ViewSchedule.CreateSchedule(doc,new ElementId(BuiltInCategory.OST_GenericModel));schedule.Name=name;
+        var schedule=ViewSchedule.CreateSchedule(doc,new ElementId(editable?BuiltInCategory.OST_Toposolid:BuiltInCategory.OST_GenericModel));schedule.Name=name;
         ScheduleField? layerField=null;
         foreach(var f in Fields)
         {
@@ -207,3 +236,6 @@ public static class QuantityParameters
         schedule.Definition.IsItemized=false;schedule.Definition.ShowGrandTotal=true;schedule.Definition.ShowGrandTotalTitle=true;schedule.Definition.GrandTotalTitle="합계";return schedule;
     }
 }
+
+
+

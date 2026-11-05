@@ -29,7 +29,7 @@ public static class FamilyBuilder
         {
             var info=Storage.Info(pile)!;var bounds=Bounds(pile);
             if(Math.Abs(bounds.Min.Z*.3048+settings.Frame.Elevation-info.Bottom)>.002||Math.Abs(bounds.Max.Z*.3048+settings.Frame.Elevation-info.Top)>.002)
-                throw new InvalidDataException($"부재 {pile.Id}: 확정 후 실제 상하단 높이가 요청값과 다릅니다.");
+                throw new InvalidDataException($"부재 {pile.Id} ({pile.Symbol.FamilyName}): 확정 후 실제 EL {bounds.Max.Z*.3048+settings.Frame.Elevation:F3} ~ {bounds.Min.Z*.3048+settings.Frame.Elevation:F3}m, 요청 {info.Top:F3} ~ {info.Bottom:F3}m. 겹친 부재 또는 패밀리 형상을 확인하세요.");
         }
         return released;
     }
@@ -39,7 +39,10 @@ public static class FamilyBuilder
         foreach(var instance in instances)
             foreach(var id in JoinGeometryUtils.GetJoinedElements(doc,instance).ToList())
             {
-                var other=doc.GetElement(id);if(Storage.Info(other)?.Kind is not ("CIP" or "HPile"))continue;
+                var other=doc.GetElement(id);if(other is not FamilyInstance family)continue;
+                var kind=Storage.Info(family)?.Kind;var name=family.Symbol.FamilyName+" "+family.Symbol.Name;
+                var knownPile=kind is "CIP" or "HPile"||name.Contains("CIP",StringComparison.OrdinalIgnoreCase)||name.Contains("C.I.P",StringComparison.OrdinalIgnoreCase)||name.Contains("PILE",StringComparison.OrdinalIgnoreCase)||name.Contains("파일",StringComparison.OrdinalIgnoreCase);
+                if(!knownPile)continue;
                 JoinGeometryUtils.UnjoinGeometry(doc,instance,other);count++;
             }
         doc.Regenerate();return count;

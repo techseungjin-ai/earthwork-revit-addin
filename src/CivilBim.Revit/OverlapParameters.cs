@@ -7,13 +7,13 @@ public static class OverlapParameters
     private static Guid Id(string name)=>new(System.Security.Cryptography.MD5.HashData(System.Text.Encoding.UTF8.GetBytes("CivilBIM-overlap-v1:"+name)));
     public static void Ensure(Document doc)
     {
-        if(Fields.All(f=>SharedParameterElement.Lookup(doc,Id(f.Name))!=null))return;
+
         var app=doc.Application;var previous=app.SharedParametersFilename;var file=Path.Combine(Path.GetTempPath(),"CivilBIM-overlap-"+Guid.NewGuid().ToString("N")+".txt");
         File.WriteAllText(file,"# Revit shared parameter file.\n*META\tVERSION\tMINVERSION\nMETA\t2\t1\n*GROUP\tID\tNAME\n*PARAM\tGUID\tNAME\tDATATYPE\tDATACATEGORY\tGROUP\tVISIBLE\tDESCRIPTION\tUSERMODIFIABLE\tHIDEWHENNOVALUE\n");
         try
         {
-            app.SharedParametersFilename=file;var definitions=app.OpenSharedParameterFile()??throw new InvalidDataException("중복체적 파라미터 정의 파일 생성 실패");var group=definitions.Groups.Create("CivilBIM overlap");var categories=app.Create.NewCategorySet();categories.Insert(doc.Settings.Categories.get_Item(BuiltInCategory.OST_GenericModel));
-            foreach(var f in Fields){if(SharedParameterElement.Lookup(doc,Id(f.Name))!=null)continue;var definition=group.Definitions.Create(new ExternalDefinitionCreationOptions(f.Name,f.Type){GUID=Id(f.Name),UserModifiable=false,Visible=f.Name!="CBIM_중복기록"});if(!doc.ParameterBindings.Insert(definition,app.Create.NewInstanceBinding(categories),GroupTypeId.Data))throw new InvalidDataException("중복 물량 바인딩 실패: "+f.Name);}
+            app.SharedParametersFilename=file;var definitions=app.OpenSharedParameterFile()??throw new InvalidDataException("중복체적 파라미터 정의 파일 생성 실패");var group=definitions.Groups.Create("CivilBIM overlap");var categories=app.Create.NewCategorySet();categories.Insert(doc.Settings.Categories.get_Item(BuiltInCategory.OST_GenericModel));categories.Insert(doc.Settings.Categories.get_Item(BuiltInCategory.OST_Toposolid));
+            foreach(var f in Fields){if(SharedParameterElement.Lookup(doc,Id(f.Name)) is SharedParameterElement existing){doc.ParameterBindings.ReInsert(existing.GetDefinition(),app.Create.NewInstanceBinding(categories),GroupTypeId.Data);continue;}var definition=group.Definitions.Create(new ExternalDefinitionCreationOptions(f.Name,f.Type){GUID=Id(f.Name),UserModifiable=false,Visible=f.Name!="CBIM_중복기록"});if(!doc.ParameterBindings.Insert(definition,app.Create.NewInstanceBinding(categories),GroupTypeId.Data))throw new InvalidDataException("중복 물량 바인딩 실패: "+f.Name);}
         }finally{app.SharedParametersFilename=previous;}
     }
     public static void Set(Element element,SoilOverlapRow row,Toposolid before,Toposolid after)
@@ -52,13 +52,14 @@ public static class OverlapParameters
     }
     public static ViewSchedule Schedule(Document doc)
     {
-        const string name="04_지층별 현황·굴착후 중복 체적";var existing=new FilteredElementCollector(doc).OfClass(typeof(ViewSchedule)).Cast<ViewSchedule>().FirstOrDefault(v=>v.Name==name);if(existing!=null)
+        const string name="04_지층별 현황·굴착후 중복 체적 (전체 지층)";var existing=new FilteredElementCollector(doc).OfClass(typeof(ViewSchedule)).Cast<ViewSchedule>().FirstOrDefault(v=>v.Name==name);if(existing!=null)
         {
             var hidden=Fields.Where(f=>f.Name is "CBIM_중복기반절토" or "CBIM_지층내성토" or "CBIM_중복기록").Select(f=>SharedParameterElement.Lookup(doc,Id(f.Name)).Id).ToHashSet();
             foreach(var id in existing.Definition.GetFieldOrder().ToList())if(hidden.Contains(existing.Definition.GetField(id).ParameterId))existing.Definition.RemoveField(id);return existing;
         }
-        var schedule=ViewSchedule.CreateSchedule(doc,new ElementId(BuiltInCategory.OST_GenericModel));schedule.Name=name;ScheduleField? layer=null;
+        var schedule=ViewSchedule.CreateSchedule(doc,ElementId.InvalidElementId);schedule.Name=name;ScheduleField? layer=null;
         foreach(var f in Fields.Where(f=>f.Name is not ("CBIM_중복기반절토" or "CBIM_지층내성토" or "CBIM_중복기록"))){var field=schedule.Definition.AddField(ScheduleFieldType.Instance,SharedParameterElement.Lookup(doc,Id(f.Name)).Id);field.ColumnHeading=f.Name.Replace("CBIM_","");if(f.Type==SpecTypeId.Volume){field.ColumnHeading+=" (m³)";field.DisplayType=ScheduleFieldDisplayType.Totals;field.SetFormatOptions(new FormatOptions(UnitTypeId.CubicMeters){Accuracy=.001,UseDigitGrouping=true});}if(f.Name=="CBIM_중복지층")layer=field;}
         schedule.Definition.AddFilter(new ScheduleFilter(layer!.FieldId,ScheduleFilterType.NotEqual,""));schedule.Definition.AddSortGroupField(new(layer.FieldId,ScheduleSortOrder.Ascending));schedule.Definition.IsItemized=false;schedule.Definition.ShowGrandTotal=true;schedule.Definition.ShowGrandTotalTitle=true;schedule.Definition.GrandTotalTitle="합계";return schedule;
     }
 }
+

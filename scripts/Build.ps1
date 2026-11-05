@@ -13,7 +13,7 @@ try {
     }
     dotnet run --project tests/CivilBim.Checks --no-restore
     if($LASTEXITCODE -ne 0){throw 'checks 실패'}
-    $package=Join-Path $repo 'artifacts\CivilBIM-0.4.0'
+    $package=Join-Path $repo 'artifacts\CivilBIM-0.4.1'
     if(Test-Path -LiteralPath $package){Remove-Item -LiteralPath $package -Recurse -Force}
     $payload=Join-Path $package 'payload'
     New-Item -ItemType Directory -Path $payload -Force | Out-Null
@@ -28,10 +28,12 @@ try {
     [IO.File]::WriteAllText($uninstaller,[IO.File]::ReadAllText($uninstaller),[Text.UTF8Encoding]::new($true))
     Copy-Item -LiteralPath 'README.md' -Destination $package -Force
     New-Item -ItemType Directory -Path (Join-Path $package 'docs') -Force | Out-Null
-    foreach($guide in @('QUICKSTART-PUBLIC.md','THIRD-PARTY.md','PdfPig-LICENSE.txt','PdfPig-NOTICES.txt','NetTopologySuite-LICENSE.md')){Copy-Item -LiteralPath (Join-Path 'docs' $guide) -Destination (Join-Path $package 'docs') -Force}
+    foreach($guide in @('QUICKSTART-PUBLIC.md','LOCAL-2026-11-05.md','CHANGELOG.md','THIRD-PARTY.md','PdfPig-LICENSE.txt','PdfPig-NOTICES.txt','NetTopologySuite-LICENSE.md')){Copy-Item -LiteralPath (Join-Path 'docs' $guide) -Destination (Join-Path $package 'docs') -Force}
     Set-Content -LiteralPath (Join-Path $package 'Install.cmd') -Encoding ascii -Value @('@echo off','powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0Install.ps1" -AssemblyDirectory "%~dp0payload"','if errorlevel 1 (echo Installation failed. See message above. & pause & exit /b 1)','echo Installation complete. Start Revit 2027.','pause')
     Set-Content -LiteralPath (Join-Path $package 'Uninstall.cmd') -Encoding ascii -Value @('@echo off','powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0Uninstall.ps1"','pause')
-    Compress-Archive -LiteralPath $package -DestinationPath (Join-Path $repo 'artifacts\CivilBIM-0.4.0.zip') -Force
+    Compress-Archive -LiteralPath $package -DestinationPath (Join-Path $repo 'artifacts\CivilBIM-0.4.1.zip') -Force
     Write-Output $package
 } finally {Pop-Location}
+
+
 

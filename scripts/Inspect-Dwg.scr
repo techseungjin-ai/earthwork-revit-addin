@@ -1,0 +1,3 @@
+(progn (setq cbf (open (strcat (getvar "TEMPPREFIX") "civilbim-cad-inventory.txt") "w")) (setq cbs (ssget "_X" '((410 . "Model")))) (setq cbi 0) (if cbs (repeat (sslength cbs) (setq cbe (entget (ssname cbs cbi))) (write-line (strcat (cdr (assoc 0 cbe)) "|" (cdr (assoc 8 cbe))) cbf) (setq cbi (1+ cbi)))) (close cbf) (princ "CIVILBIM_INVENTORY_DONE"))
+_.QUIT
+_Y

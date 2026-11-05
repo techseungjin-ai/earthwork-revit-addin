@@ -3,6 +3,15 @@ using System.Text.Json;
 
 int checks=0;
 {
+    var h=new[]{new Point3(-.15,-.15),new(.15,-.15),new(.15,-.13),new(.01,-.13),new(.01,.13),new(.15,.13),new(.15,.15),new(-.15,.15),new(-.15,.13),new(-.01,.13),new(-.01,-.13),new(-.15,-.13),new(-.15,-.15)};
+    foreach(var angle in new[]{0.0,Math.PI/4,Math.PI/2})
+    {
+        var outline=h.Select(pt=>new Point3(pt.X*Math.Cos(angle)-pt.Y*Math.Sin(angle),pt.X*Math.Sin(angle)+pt.Y*Math.Cos(angle))).ToList();
+        var result=PlanRecognition.HPiles(outline.Zip(outline.Skip(1),(a,b)=>new PlanSegment(a,b)));
+        if(result.Count!=1||Math.Abs(Math.Sin(result[0].Angle-angle))>1e-8)throw new Exception("폐합 H단면의 플랜지 방향 검산 실패");
+    }
+}
+{
     var factory=Polygons.Factory;
     var lineBoundary=ConnectedPath.Join(new IReadOnlyList<Point3>[] {new[]{new Point3(10,0),new Point3(10,10)},new[]{new Point3(0,10),new Point3(0,0)},new[]{new Point3(10,10),new Point3(0,10)},new[]{new Point3(0,0),new Point3(10,0)}});
     if(lineBoundary.Count!=5||lineBoundary[0].DistanceXY(lineBoundary[^1])>.001)throw new Exception("여러 Revit 선의 폐합 외곽 연결 실패");
@@ -11,12 +20,18 @@ int checks=0;
     if(regions.Count!=4||Math.Abs(regions.Sum(p=>p.Area)-100)>1e-7||regions.Any(p=>Math.Abs(p.Area-25)>1e-7))throw new Exception("교차 구분선의 폐합 영역 분할 실패");
     var disconnected=ExcavationRegions.Split(new IReadOnlyList<Point3>[] {new[]{new Point3(5,0),new Point3(5,9)}},boundary);
     if(disconnected.Count!=1)throw new Exception("끊긴 선을 임의로 연결했습니다.");
+    var gapPaths=new IReadOnlyList<Point3>[] {new[]{new Point3(5,0),new Point3(5,9.998)}};
+    if(ExcavationRegions.Split(gapPaths,boundary,.003).Count!=2)throw new Exception("3mm 허용에서 2mm 틈이 연결되지 않았습니다.");
+    if(ExcavationRegions.Split(gapPaths,boundary,.001).Count!=1)throw new Exception("허용 범위 밖 틈을 연결했습니다.");
+    var endGap=new IReadOnlyList<Point3>[] {new[]{new Point3(5,0),new Point3(5,4.999)},new[]{new Point3(5,5.001),new Point3(5,10)}};
+    if(ExcavationRegions.Split(endGap,boundary,.003).Count!=2)throw new Exception("분리된 선 끝점의 2mm 틈 연결 실패");
+    if(ExcavationRegions.Split(endGap,boundary,.001).Count!=1)throw new Exception("허용 범위 밖 선 끝점을 연결했습니다.");
     var file=Environment.GetEnvironmentVariable("CIVILBIM_EXC_PATHS");
     if(!string.IsNullOrEmpty(file))
     {
         using var json=JsonDocument.Parse(File.ReadAllText(file));var paths=json.RootElement.GetProperty("Paths").EnumerateArray().Where(x=>x.GetProperty("Layer").GetString()=="CE-SLOP-FILL").Select(x=>(IReadOnlyList<Point3>)x.GetProperty("Points").EnumerateArray().Select(v=>new Point3(v.GetProperty("X").GetDouble(),v.GetProperty("Y").GetDouble(),0)).ToList()).ToList();
         var outer=factory.CreatePolygon(new[]{new NetTopologySuite.Geometries.Coordinate(99,17),new(149,17),new(149,79),new(99,79),new(99,17)});
-        var actual=ExcavationRegions.Split(paths,outer);Console.WriteLine($"실제 CAD 사면선 {paths.Count}개 → 폐합 구역 {actual.Count}개 / 합계 {actual.Sum(p=>p.Area):F3}㎡");
+        var actual=ExcavationRegions.Split(paths,outer,.002);Console.WriteLine($"실제 CAD 사면선 {paths.Count}개 (허용 2mm) → 폐합 구역 {actual.Count}개 / 합계 {actual.Sum(p=>p.Area):F3}㎡");
     }
     Console.WriteLine("PASS CAD 사면선 교차 분할 및 끊어진 경계 검사");
 }
@@ -99,3 +114,4 @@ if(args.Length>2)
     Console.WriteLine($"DWG texts={texts.Count} depth candidates={candidates.Count}");
 }
 Console.WriteLine($"{checks} checks passed.");
+
