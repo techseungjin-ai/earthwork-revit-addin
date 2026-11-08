@@ -101,6 +101,27 @@ public static class FamilyBuilder
             throw new InvalidDataException($"{symbol.FamilyName}: 요청 EL 정렬 실패. 실제 {box.Min.Z*.3048:F3}~{box.Max.Z*.3048:F3}, 요청 {zBottom*.3048:F3}~{zTop*.3048:F3}.");
         return instance;
     }
+    public static bool IsPointGeneric(FamilySymbol symbol)=>
+        symbol.Category.Id.Value==(long)BuiltInCategory.OST_GenericModel &&
+        symbol.Family.FamilyPlacementType==FamilyPlacementType.OneLevelBased;
+
+    public static FamilyInstance PointGeneric(Document doc,string symbolId,XYZ point,double angle)
+    {
+        var symbol=Symbol(doc,symbolId);
+        if(!IsPointGeneric(symbol))throw new InvalidDataException("호스트가 없는 단일 레벨 점 기반 일반 모델을 선택하세요.");
+        var instance=doc.Create.NewFamilyInstance(point,symbol,Level(doc,point.Z),StructuralType.NonStructural);
+        doc.Regenerate();
+        if(instance.Location is not LocationPoint location)throw new InvalidDataException("패밀리 삽입점을 읽을 수 없습니다.");
+        var delta=point-location.Point;
+        if(delta.GetLength()>1e-7)ElementTransformUtils.MoveElement(doc,instance.Id,delta);
+        var rotation=angle-location.Rotation;
+        if(Math.Abs(rotation)>1e-7)ElementTransformUtils.RotateElement(doc,instance.Id,Line.CreateBound(point,point+XYZ.BasisZ),rotation);
+        doc.Regenerate();
+        if(instance.Location is not LocationPoint placed||placed.Point.DistanceTo(point)>ModelBuilder.Feet(.001))
+            throw new InvalidDataException("패밀리 삽입점이 요청 위치와 다릅니다.");
+        return instance;
+    }
+
     public static FamilyInstance Horizontal(Document doc,string symbolId,XYZ start,XYZ end,bool alignCenter=false)
     {
         var symbol=Symbol(doc,symbolId);var level=Level(doc,start.Z);

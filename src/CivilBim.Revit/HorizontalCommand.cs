@@ -52,15 +52,51 @@ public sealed class HorizontalWindow:ModelessWindow
 }
 public static class HorizontalService
 {
+    public static List<FamilyInstance> PlacePoints(Document doc,IEnumerable<PlanSegment> lines,IEnumerable<double> elevations,
+        string symbol,Settings settings,string source,string kind,double offsetMetres,bool fromEnd,double rotationDegrees)
+    {
+        var list=new List<FamilyInstance>();var batch=Guid.NewGuid().ToString();
+        foreach(var line in lines)
+        {
+            if(line.Length<=0||offsetMetres<0||offsetMetres>line.Length+1e-9)
+                throw new InvalidDataException("오프셋이 CAD 선 길이보다 큽니다. 선 길이 또는 오프셋을 확인하세요.");
+            var endpoint=fromEnd?line.B:line.A;
+            var other=fromEnd?line.A:line.B;
+            var dx=(other.X-endpoint.X)/line.Length;var dy=(other.Y-endpoint.Y)/line.Length;
+            var angle=Math.Atan2(dy,dx)+rotationDegrees*Math.PI/180;
+            foreach(var el in elevations)
+            {
+                var point=new Point3(endpoint.X+dx*offsetMetres,endpoint.Y+dy*offsetMetres,el-settings.Frame.Elevation);
+                var instance=FamilyBuilder.PointGeneric(doc,symbol,ModelBuilder.Xyz(point),angle);
+                FamilyBuilder.Track(doc,instance,new ElementInfo(kind,$"{kind}-{list.Count+1:D5}",kind,el,el,0,0,0,"",source,batch,
+                    ModelBuilder.SurveyOrLocal(settings.Frame,point),settings.Frame,settings.Scale));
+                list.Add(instance);
+            }
+        }
+        return list;
+    }
+
     public static List<FamilyInstance> Place(Document doc,IEnumerable<PlanSegment> lines,IEnumerable<double> elevations,string symbol,Settings settings,string source)
     {
         var list=new List<FamilyInstance>();var batch=Guid.NewGuid().ToString();
         foreach(var line in lines)foreach(var el in elevations)
         {
             var a=ModelBuilder.Xyz(line.A with {Z=el-settings.Frame.Elevation});var b=ModelBuilder.Xyz(line.B with {Z=el-settings.Frame.Elevation});
-            var instance=FamilyBuilder.Horizontal(doc,symbol,a,b,alignCenter:true);FamilyBuilder.Track(doc,instance,new ElementInfo("Strut",$"STRUT-{list.Count+1:D5}","STRUT / 띠장",el,el,0,0,line.Length,"",source,batch,settings.Frame.ToSurvey(line.A),settings.Frame,settings.Scale));list.Add(instance);
+            var instance=FamilyBuilder.Horizontal(doc,symbol,a,b,alignCenter:true);FamilyBuilder.Track(doc,instance,new ElementInfo("Strut",$"STRUT-{list.Count+1:D5}","STRUT / 띠장",el,el,0,0,line.Length,"",source,batch,ModelBuilder.SurveyOrLocal(settings.Frame,ModelBuilder.Meters(a)),settings.Frame,settings.Scale));list.Add(instance);
         }
         return list;
+    }
+}
+[Transaction(TransactionMode.Manual)]
+public sealed class PointSupportCommand:IExternalCommand
+{
+    public Result Execute(ExternalCommandData data,ref string message,ElementSet elements)
+    {
+        var app=data.Application;
+        if(app.ActiveUIDocument is not UIDocument ui)return Result.Cancelled;
+        var doc=ui.Document;
+        ModelessHost.Open(app,"어스앵커·락볼트",()=>new SheetHorizontalWindow(doc,Storage.Load(doc),pointSupports:true));
+        return Result.Succeeded;
     }
 }
 [Transaction(TransactionMode.Manual)]

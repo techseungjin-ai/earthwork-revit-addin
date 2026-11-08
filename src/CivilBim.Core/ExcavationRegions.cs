@@ -6,15 +6,16 @@ namespace CivilBim.Core;
 
 public static class ExcavationRegions
 {
-    // All inputs are local model metres. Only actual intersections are noded;
-    // gaps are not silently bridged.
-    public static List<Polygon> Split(IEnumerable<IReadOnlyList<Point3>> paths,Polygon boundary,double gapTolerance=0)
+    public static List<Polygon> Split(IEnumerable<IReadOnlyList<Point3>> paths,Polygon boundary,double gapTolerance=0,double ignoreAtOrBelow=0)
     {
-        if(!double.IsFinite(gapTolerance)||gapTolerance<0||gapTolerance>.1)throw new InvalidDataException("연결 허용 오차는 0~100mm로 입력하세요.");
+        if(!double.IsFinite(gapTolerance)||gapTolerance<0||gapTolerance>.5)throw new InvalidDataException("연결 허용 오차는 0~500mm로 입력하세요.");
+        if(!double.IsFinite(ignoreAtOrBelow)||ignoreAtOrBelow<0)throw new InvalidDataException("제외할 선 길이는 0mm 이상으로 입력하세요.");
         if(!boundary.IsValid||boundary.Area<.01)throw new InvalidDataException("외곽 경계가 올바르지 않습니다.");
         var segments=new List<(Coordinate A,Coordinate B)>();
         foreach(var path in paths)
         {
+            // Filter each CAD entity as a whole, preserving short vertices in long polylines.
+            if(ignoreAtOrBelow>0&&path.Zip(path.Skip(1),(a,b)=>a.DistanceXY(b)).Sum()<=ignoreAtOrBelow+1e-9)continue;
             for(var i=1;i<path.Count;i++)
             {
                 var a=path[i-1];var b=path[i];if(a.DistanceXY(b)<.001)continue;

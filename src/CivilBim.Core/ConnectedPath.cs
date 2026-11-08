@@ -46,4 +46,22 @@ public static class ConnectedPath
         for(var i=0;i<path.Count-1;i++){var a=path[i];var b=path[i+1];var dx=b.X-a.X;var dy=b.Y-a.Y;var length=dx*dx+dy*dy;if(length<1e-12)continue;var t=Math.Clamp(((p.X-a.X)*dx+(p.Y-a.Y)*dy)/length,0,1);var d=p.DistanceXY(new(a.X+t*dx,a.Y+t*dy));if(d<best.Distance)best=(i,d);}
         if(best.Segment<0)throw new InvalidDataException("길이가 있는 경로가 없습니다.");return best;
     }
+
+    public static List<Point3> Orient(IReadOnlyList<Point3> path,Point3 start,Point3? direction=null)
+    {
+        if(path.Count<2)throw new InvalidDataException("먼저 경로를 선택하세요.");
+        if(path[0].DistanceXY(path[^1])>.001)
+            return start.DistanceXY(path[0])<=start.DistanceXY(path[^1])?path.ToList():path.Reverse().ToList();
+
+        var vertices=path.Take(path.Count-1).ToArray();
+        var first=Enumerable.Range(0,vertices.Length).MinBy(i=>vertices[i].DistanceXY(start));
+        var forward=Enumerable.Range(0,vertices.Length).Select(i=>vertices[(first+i)%vertices.Length]).ToList();
+        forward.Add(forward[0]);
+        if(direction is not Point3 next)throw new InvalidDataException("닫힌 경로에서 시작점 옆 진행할 선을 클릭하세요.");
+        var a=Nearest(next,new[]{forward[0],forward[1]}).Distance;
+        var b=Nearest(next,new[]{forward[0],forward[^2]}).Distance;
+        if(Math.Abs(a-b)<.001)throw new InvalidDataException("방향을 구분할 수 없습니다. 시작점 옆의 진행할 선 중간을 클릭하세요.");
+        if(b<a)forward.Reverse();
+        return forward;
+    }
 }

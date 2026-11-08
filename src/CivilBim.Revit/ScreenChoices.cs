@@ -20,9 +20,9 @@ public static class ScreenChoices
         refresh.Click+=(_,_)=>owner.Api(()=>Reload());
         pick.Click+=(_,_)=>owner.Api(app=>{var reference=app.ActiveUIDocument.Selection.PickObject(ObjectType.Element,new CadFilter(),"CAD 링크 / 가져오기를 선택하세요.");Reload(doc.GetElement(reference).UniqueId);},true);
     }
-    public static void Layer(ModelessWindow owner,Panel panel,ComboBox layer,ComboBox cad,Document doc)
+    public static void Layer(ModelessWindow owner,Panel panel,ComboBox layer,ComboBox cad,Document doc,string pickLabel="화면에서 선 선택")
     {
-        var row=new DockPanel {Margin=new(0,2,0,0)};var pick=new Button {Content="화면에서 선 선택",Padding=new(8,5,8,5),Margin=new(6,0,0,0)};DockPanel.SetDock(pick,Dock.Right);row.Children.Add(pick);row.Children.Add(layer);panel.Children.Add(row);
+        var row=new DockPanel {Margin=new(0,2,0,0)};var pick=new Button {Content=pickLabel,Padding=new(8,5,8,5),Margin=new(6,0,0,0)};DockPanel.SetDock(pick,Dock.Right);row.Children.Add(pick);row.Children.Add(layer);panel.Children.Add(row);
         pick.Click+=(_,_)=>owner.Api(app=>
         {
             var reference=app.ActiveUIDocument.Selection.PickObject(ObjectType.PointOnElement,new CadFilter(),"인식할 레이어의 CAD 선·원 위를 클릭하세요.");

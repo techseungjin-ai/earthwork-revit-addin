@@ -5,6 +5,28 @@ namespace CivilBim.Core;
 public sealed record PlanPath(List<Point3> Points,bool Closed);
 public static class HorizontalRecognition
 {
+    public static PlanSegment PickSegment(IReadOnlyList<PlanSegment> candidates,Point3 point,double tolerance=.02)
+    {
+        var ranked=candidates.Where(s=>s.Length>.001).Select(s=>
+        {
+            var dx=s.B.X-s.A.X;var dy=s.B.Y-s.A.Y;
+            var ratio=Math.Clamp(((point.X-s.A.X)*dx+(point.Y-s.A.Y)*dy)/(dx*dx+dy*dy),0,1);
+            return (Segment:s,Distance:point.DistanceXY(new(s.A.X+ratio*dx,s.A.Y+ratio*dy)));
+        }).Where(p=>p.Distance<=tolerance).OrderBy(p=>p.Distance).ToList();
+        if(ranked.Count==0)throw new InvalidDataException("선택 레이어의 CAD 중심선 위를 클릭하세요.");
+        var chosen=ranked[0];
+        if(ranked.Skip(1).Any(p=>p.Distance-chosen.Distance<.001&&SegmentKey(p.Segment)!=SegmentKey(chosen.Segment)))
+            throw new InvalidDataException("여러 선이 교차하거나 겹칩니다. 원하는 중심선의 중간을 클릭하세요.");
+        return chosen.Segment;
+    }
+
+    public static string SegmentKey(PlanSegment segment)
+    {
+        static string Key(Point3 p)=>FormattableString.Invariant($"{Math.Round(p.X,3):F3},{Math.Round(p.Y,3):F3}");
+        var a=Key(segment.A);var b=Key(segment.B);
+        return string.CompareOrdinal(a,b)<=0?a+"|"+b:b+"|"+a;
+    }
+
     public static List<PlanSegment> Centerlines(IEnumerable<PlanPath> paths)
     {
         var result=new List<PlanSegment>();
@@ -26,8 +48,7 @@ public static class HorizontalRecognition
             }
             for(var i=1;i<path.Points.Count;i++)if(path.Points[i-1].DistanceXY(path.Points[i])>.01)result.Add(new(path.Points[i-1],path.Points[i]));
         }
-        string Key(Point3 p)=>$"{Math.Round(p.X,3):R},{Math.Round(p.Y,3):R}";
-        return result.DistinctBy(s=>string.CompareOrdinal(Key(s.A),Key(s.B))<=0?Key(s.A)+"|"+Key(s.B):Key(s.B)+"|"+Key(s.A)).ToList();
+        return result.DistinctBy(SegmentKey).ToList();
     }
     public static List<double> DrawingTiers(IEnumerable<PlanSegment> lines,double drawingDatum,double elevationDatum,double verticalScale,double groupTolerance=.4)
     {

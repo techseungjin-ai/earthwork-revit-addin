@@ -3,6 +3,14 @@ using System.Text.Json;
 
 int checks=0;
 {
+    var center=new PlanSegment(new(0,0),new(5,5));
+    var parallel=new PlanSegment(new(0,.01),new(5,5.01));
+    var crossing=new PlanSegment(new(0,5),new(5,0));
+    if(HorizontalRecognition.PickSegment(new[]{parallel,center,crossing},new(1,1))!=center)
+        throw new Exception("클릭한 중심선 대신 같은 레이어의 다른 선을 선택했습니다.");
+    Reject(()=>HorizontalRecognition.PickSegment(new[]{center,crossing},new(2.5,2.5)),"CAD 교차점 모호성 검사");
+}
+{
     var h=new[]{new Point3(-.15,-.15),new(.15,-.15),new(.15,-.13),new(.01,-.13),new(.01,.13),new(.15,.13),new(.15,.15),new(-.15,.15),new(-.15,.13),new(-.01,.13),new(-.01,-.13),new(-.15,-.13),new(-.15,-.15)};
     foreach(var angle in new[]{0.0,Math.PI/4,Math.PI/2})
     {
@@ -26,6 +34,15 @@ int checks=0;
     var endGap=new IReadOnlyList<Point3>[] {new[]{new Point3(5,0),new Point3(5,4.999)},new[]{new Point3(5,5.001),new Point3(5,10)}};
     if(ExcavationRegions.Split(endGap,boundary,.003).Count!=2)throw new Exception("분리된 선 끝점의 2mm 틈 연결 실패");
     if(ExcavationRegions.Split(endGap,boundary,.001).Count!=1)throw new Exception("허용 범위 밖 선 끝점을 연결했습니다.");
+    var wideGap=new IReadOnlyList<Point3>[] {new[]{new Point3(5,0),new Point3(5,9.55)}};
+    if(ExcavationRegions.Split(wideGap,boundary,.5).Count!=2)throw new Exception("500mm 허용에서 450mm 틈 연결 실패");
+    var marks=new IReadOnlyList<Point3>[] {new[]{new Point3(0,5),new Point3(10,5)},new[]{new Point3(0,.3),new Point3(.3,0)}};
+    if(ExcavationRegions.Split(marks,boundary).Count!=3||ExcavationRegions.Split(marks,boundary,0,.5).Count!=2)
+        throw new Exception("짧은 표시선을 제외한 구역 인식 실패");
+    var directed=ConnectedPath.Orient(lineBoundary,new(10,10),new(10,5));
+    if(directed[0].DistanceXY(new(10,10))>.001||directed[1].DistanceXY(new(10,0))>.001)throw new Exception("닫힌 경로의 시작점 및 방향 지정 실패");
+    var open=ConnectedPath.Orient(new[]{new Point3(0,0),new(10,0),new(10,10)},new(10,10));
+    if(open[0].DistanceXY(new(10,10))>.001)throw new Exception("열린 경로의 시작 끝점 지정 실패");
     var file=Environment.GetEnvironmentVariable("CIVILBIM_EXC_PATHS");
     if(!string.IsNullOrEmpty(file))
     {

@@ -1,7 +1,7 @@
 param([Parameter(Mandatory=$true)][string]$Destination)
 $ErrorActionPreference='Stop'
 $repo=Split-Path -Parent $PSScriptRoot
-$version='0.4.1'
+$version='0.4.2'
 $name='CivilBIM-'+$version
 $package=Join-Path $repo ('artifacts\'+$name)
 $zip=$package+'.zip'

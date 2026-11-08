@@ -20,7 +20,10 @@ public sealed class App : IExternalApplication
         panel.AddItem(Button("CivilBimHPile","H-PILE\n인식·회전",typeof(App).Assembly.Location,typeof(HPilePlacementCommand).FullName!));
         panel.AddItem(Button("CivilBimDepth2D","경로 단면·시트\n높이 맞춤",typeof(App).Assembly.Location,typeof(DrawingDevelopmentCommand).FullName!));
         panel.AddItem(Button("CivilBimStrut","STRUT·띠장\n전개도 다단",typeof(App).Assembly.Location,typeof(HorizontalCommand).FullName!));
+        panel.AddItem(Button("CivilBimPointSupport","어스앵커·락볼트\n전개도 다단",typeof(App).Assembly.Location,typeof(PointSupportCommand).FullName!));
         var advanced=app.CreateRibbonPanel(tab,"추가 도구");
+        advanced.AddItem(Button("CivilBimSurfaceCopy","지형 표면\n복사",typeof(App).Assembly.Location,typeof(TerrainSurfaceCopyCommand).FullName!));
+        advanced.AddItem(Button("CivilBimTerrainMerge","분할 지형\n병합",typeof(App).Assembly.Location,typeof(TerrainSolidMergeCommand).FullName!));
         advanced.AddItem(Button("CivilBimSoil","작업대지\n지층 생성",typeof(App).Assembly.Location,typeof(SoilCommand).FullName!));
         advanced.AddItem(Button("CivilBimSoilOverlap","지형·지층\n중복체적",typeof(App).Assembly.Location,typeof(SoilOverlapCommand).FullName!));
         advanced.AddItem(Button("CivilBimCipSplit","CIP\n지층 분할",typeof(App).Assembly.Location,typeof(CipSplitCommand).FullName!));
