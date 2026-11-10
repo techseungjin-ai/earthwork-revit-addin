@@ -75,6 +75,7 @@ public sealed record ElementInfo(string Kind,string ParentId,string Layer,double
     public bool OriginAtTop {get;init;}
     public double Rotation {get;init;}
     public string TopParameter {get;init;}="";
+    public string BottomParameter {get;init;}="";
 }
 
 public static class Storage

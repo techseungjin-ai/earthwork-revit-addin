@@ -179,7 +179,12 @@ public static class FamilyBuilder
         {
             var baseLevel=(Level)doc.GetElement(instance.get_Parameter(BuiltInParameter.FAMILY_BASE_LEVEL_PARAM).AsElementId());
             var topLevel=(Level)doc.GetElement(instance.get_Parameter(BuiltInParameter.FAMILY_TOP_LEVEL_PARAM).AsElementId());
-            instance.get_Parameter(BuiltInParameter.FAMILY_BASE_LEVEL_OFFSET_PARAM).Set(low-baseLevel.Elevation);instance.get_Parameter(BuiltInParameter.FAMILY_TOP_LEVEL_OFFSET_PARAM).Set(high-topLevel.Elevation);
+            instance.get_Parameter(BuiltInParameter.FAMILY_BASE_LEVEL_OFFSET_PARAM).Set(low-baseLevel.ProjectElevation);instance.get_Parameter(BuiltInParameter.FAMILY_TOP_LEVEL_OFFSET_PARAM).Set(high-topLevel.ProjectElevation);
+        }
+        else if(!string.IsNullOrEmpty(info.BottomParameter))
+        {
+            SetLength(instance,info.TopParameter,top-settings.Frame.Elevation,true);
+            SetLength(instance,info.BottomParameter,bottom-settings.Frame.Elevation,true);
         }
         else
         {

@@ -13,7 +13,7 @@ try {
     }
     dotnet run --project tests/CivilBim.Checks --no-restore
     if($LASTEXITCODE -ne 0){throw 'checks 실패'}
-    $package=Join-Path $repo 'artifacts\CivilBIM-0.4.2'
+    $package=Join-Path $repo 'artifacts\CivilBIM-0.4.3'
     if(Test-Path -LiteralPath $package){Remove-Item -LiteralPath $package -Recurse -Force}
     $payload=Join-Path $package 'payload'
     New-Item -ItemType Directory -Path $payload -Force | Out-Null
